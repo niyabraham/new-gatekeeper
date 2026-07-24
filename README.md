@@ -3,7 +3,7 @@ Gatekeeper is an advanced, object-oriented Python security pipeline designed to 
 ```markdown
 
 
-## 🔄 End-to-End System Workflow
+## End-to-End System Workflow
 
 ```text
 [ gatekeeper.py ] (CLI Controller)
@@ -31,7 +31,7 @@ Gatekeeper is an advanced, object-oriented Python security pipeline designed to 
 
 ---
 
-## 📂 Project Directory Structure
+##  Project Directory Structure
 
 ```text
 NEW GATEKEEPER/
@@ -61,7 +61,7 @@ NEW GATEKEEPER/
 
 ---
 
-## 🛠️ Detailed Component & Code Logic Breakdown
+##  Detailed Component & Code Logic Breakdown
 
 ### 1. `gatekeeper.py` (CLI Controller)
 
@@ -112,11 +112,11 @@ NEW GATEKEEPER/
 
 ---
 
-## 🚀 Installation & Setup
+##  Installation & Setup
 
 1. **Clone the Repository**:
 ```powershell
-git clone [https://github.com/YOUR_USERNAME/NEW-GATEKEEPER.git](https://github.com/YOUR_USERNAME/NEW-GATEKEEPER.git)
+git clone [https://github.com/niyabraham/new-gatekeeper.git](https://github.com/niyabraham/new-gatekeeper.git)
 cd NEW-GATEKEEPER
 
 ```
@@ -132,7 +132,7 @@ python -m pip install -r requirements.txt
 
 ---
 
-## 💻 Command-Line Usage
+##  Command-Line Usage
 
 ### 1. Scan a Document
 
@@ -154,7 +154,7 @@ python gatekeeper.py --triage
 
 ---
 
-## 📊 Compliance Audit Logging (`logs/audit_log.jsonl`)
+## Compliance Audit Logging (`logs/audit_log.jsonl`)
 
 Every scan appends an immutable JSON Line record detailing the execution timestamp, target file, calculated risk score, verdict (`CLEAN` or `BLOCKED`), destination path, and findings breakdown. Example entry:
 
