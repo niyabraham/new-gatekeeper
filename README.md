@@ -116,7 +116,7 @@ NEW GATEKEEPER/
 
 1. **Clone the Repository**:
 ```powershell
-git clone [https://github.com/niyabraham/new-gatekeeper.git](https://github.com/niyabraham/new-gatekeeper.git)
+git clone https://github.com/niyabraham/new-gatekeeper.git
 cd NEW-GATEKEEPER
 
 ```
