@@ -81,6 +81,7 @@ class DocumentScanner:
         finally:
             vba_parser.close()
 
+        
         # 2. Excel 4.0 / XLM Macro Scanning
         if XLM_AVAILABLE:
             try:
@@ -92,7 +93,8 @@ class DocumentScanner:
                         "desc": "Legacy Excel 4.0 (XLM) macro sheets or formulas detected."
                     })
                     self.risk_score += 30
-            except Exception:
+            except Exception as e:
+                # Safely handle external library parsing anomalies without crashing the pipeline
                 pass
 
         # 3. Custom Rule Pattern Matching
