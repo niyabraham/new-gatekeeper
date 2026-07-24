@@ -1,11 +1,7 @@
-
+Gatekeeper is an advanced, object-oriented Python security pipeline designed to inspect, deobfuscate, score, and isolate macro-enabled Microsoft Excel workbooks (.xlsm, .xls) and legacy Excel 4.0 (XLM) sheets. It protects systems from weaponized Office documents using multi-layered static analysis, custom weighted rule engines, and automated quarantine triage.
 
 ```markdown
-# 🛡️ Gatekeeper Security Pipeline
 
-Gatekeeper is an advanced, object-oriented Python security pipeline designed to inspect, deobfuscate, score, and isolate macro-enabled Microsoft Excel workbooks (`.xlsm`, `.xls`) and legacy Excel 4.0 (XLM) sheets. It protects systems from weaponized Office documents using multi-layered static analysis, custom weighted rule engines, string reconstruction feedback loops, and automated quarantine triage.
-
----
 
 ## 🔄 End-to-End System Workflow
 
