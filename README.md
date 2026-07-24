@@ -174,7 +174,7 @@ Every scan appends an immutable JSON Line record detailing the execution timesta
 
 ---
 
-## 🔍 Supported File Formats
+##  Supported File Formats
 
 Using the underlying parsing capabilities of `oletools`, Gatekeeper can be extended to inspect macro-enabled containers across the Microsoft Office suite, including:
 
