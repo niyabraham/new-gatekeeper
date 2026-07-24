@@ -5,7 +5,7 @@ Gatekeeper is an advanced, object-oriented Python security pipeline designed to 
 
 ## End-to-End System Workflow
 
-```text
+
 [ gatekeeper.py ] (CLI Controller)
        │
        ├── Mode: --triage ──> [ QuarantineManager.triage_quarantine() ] ──> Prints Report
