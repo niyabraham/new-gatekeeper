@@ -1,26 +1,37 @@
-To help you present this project cleanly on GitHub and impress your lead during the review, here is a complete, production-ready **`README.md`** template. You can copy and paste this directly into a `README.md` file in your project root directory.
+Here is the complete, definitive **`README.md`** file containing the end-to-end workflow, project directory structure, and detailed file-by-file code logic. You can copy and paste this directly into your `README.md` file:
 
----
-
+```markdown
 # 🛡️ Gatekeeper Security Pipeline
 
-Gatekeeper is an advanced, object-oriented Python security pipeline designed to inspect, deobfuscate, score, and isolate macro-enabled Microsoft Excel workbooks (`.xlsm`, `.xls`) and legacy Excel 4.0 (XLM) sheets. It protects systems from weaponized Office documents using multi-layered static analysis, custom weighted rule engines, and automated quarantine triage.
+Gatekeeper is an advanced, object-oriented Python security pipeline designed to inspect, deobfuscate, score, and isolate macro-enabled Microsoft Excel workbooks (`.xlsm`, `.xls`) and legacy Excel 4.0 (XLM) sheets. It protects systems from weaponized Office documents using multi-layered static analysis, custom weighted rule engines, string reconstruction feedback loops, and automated quarantine triage.
 
 ---
 
-## 🚀 Key Features & Lead's Suggestions Implemented
+## 🔄 End-to-End System Workflow
 
-* **Modular Class-Based Architecture**: Fully structured object-oriented design separating scanning, deobfuscation, quarantine management, and pipeline orchestration.
-* **Multi-Vector Threat Detection**:
-* **VBA Macro Analysis**: Extracts and inspects embedded VBA source code using `olevba` (`oletools`).
-* **Legacy XLM Inspection**: Parses hidden Excel 4.0 macro sheets via `XLMMacroDeobfuscator`.
-* **Custom Rule Engine**: Evaluates structured pattern signatures from an externalized configuration (`rules/macro_rules.json`).
-* **Keyword Co-occurrence Heuristic**: Detects chained risk indicators (e.g., combining shell execution and dynamic object instantiation).
+```text
+[ gatekeeper.py ] (CLI Controller)
+       │
+       ├── Mode: --triage ──> [ QuarantineManager.triage_quarantine() ] ──> Prints Forensic Report
+       │
+       └── Mode: File Scan ──> [ GatekeeperPipeline.run() ]
+                                   │
+                                   ├── 1. DocumentScanner.analyze()
+                                   │       ├── VBA Macro Extraction (olevba)
+                                   │       ├── XLM Macro Sheet Analysis (XLMMacroDeobfuscator)
+                                   │       ├── Custom Rule Matching (rules/macro_rules.json)
+                                   │       └── Keyword Co-occurrence Heuristic
+                                   │
+                                   ├── 2. MacroDeobfuscator.clean_strings()
+                                   │       └── Base64 / String Reconstruction & Feedback Loop
+                                   │
+                                   ├── 3. Risk Scoring & Routing
+                                   │       ├── Risk Score >= 50 ──> BLOCKED ──> QuarantineManager.quarantine_file()
+                                   │       └── Risk Score < 50  ──> CLEAN   ──> Copies to clean_output/
+                                   │
+                                   └── 4. Crash-Safe Audit Logging (logs/audit_log.jsonl)
 
-
-* **String Deobfuscation Feedback Loop**: Automatically decodes Base64 payloads and obfuscated strings from extracted macro code, feeding findings back into the cumulative risk score.
-* **Secure Quarantine & Triage**: Automatically isolates high-risk files into a secure directory (`quarantine/`) and supports forensic triage reporting via command-line arguments.
-* **Crash-Safe Audit Logging**: Records compliance logs using high-performance, append-only **JSON Lines (`logs/audit_log.jsonl`)** to prevent file corruption during mid-write interruptions.
+```
 
 ---
 
@@ -54,11 +65,62 @@ NEW GATEKEEPER/
 
 ---
 
-## ⚙️ Installation & Setup
+## 🛠️ Detailed Component & Code Logic Breakdown
+
+### 1. `gatekeeper.py` (CLI Controller)
+
+* **Purpose**: Serves as the primary command-line entry point for users and automated scripts.
+* **Code Logic**: Uses Python's `argparse` module to handle execution flags. If the `--triage` flag is provided, it invokes `QuarantineManager.triage_quarantine()` and prints a formatted summary table of all quarantined threats. Otherwise, it extracts the target file path, initializes `GatekeeperPipeline`, and triggers the analysis.
+
+### 2. `core/pipeline.py` (`GatekeeperPipeline` Class)
+
+* **Purpose**: Orchestrates the entire security pipeline from ingestion to auditing.
+* **Key Functions**:
+* `__init__(file_path)`: Resolves absolute file paths, initializes component managers, and sets up the absolute path for the audit log (`logs/audit_log.jsonl`).
+* `_log_audit(...)`: Implements crash-safe JSON Lines (`jsonl`) logging. It serializes timestamp, filename, verdict, risk score, findings, and destination into a single-line JSON string and appends it to `audit_log.jsonl`.
+* `run()`: Executes the core workflow: calls the scanner, passes the code corpus to the deobfuscator for string reconstruction, folds discoveries back into the risk score, routes files to `clean_output/` or `quarantine/`, writes the audit log entry, and returns the scan summary dictionary.
+
+
+
+### 3. `core/scanner.py` (`DocumentScanner` Class)
+
+* **Purpose**: Performs deep, multi-vector static analysis on the workbook.
+* **Key Functions**:
+* `_load_custom_rules()`: Reads structured signature patterns and risk weights from `rules/macro_rules.json`.
+* `analyze()`:
+1. **VBA Parsing (`olevba`)**: Detects active macros, extracts VBA code streams into an `extracted_code_corpus`, evaluates keywords, and assigns weighted scores (e.g., 30 for auto-execute triggers and dangerous API calls like `Shell` or `CreateObject`, 10 for standard keywords).
+2. **XLM Parsing (`XLMMacroDeobfuscator`)**: Checks for legacy Excel 4.0 workspace macro sheets or hidden formulas.
+3. **Custom Rule Matching**: Scans the extracted code corpus against patterns defined in `macro_rules.json`.
+4. **Keyword Co-occurrence Heuristic**: Evaluates code blocks for chained risk indicators (combining triggers like `shell`, `environ`, and `powershell`) to catch advanced threats.
+
+
+
+
+
+### 4. `core/deobfuscator.py` (`MacroDeobfuscator` Class)
+
+* **Purpose**: Reconstructs hidden strings, encoded blocks, and obfuscated variables.
+* **Key Functions**:
+* `clean_strings()`: Scans code snippets for Base64 or obfuscated string patterns, decodes payloads, and extracts plaintext indicators to feed back into the pipeline's risk scoring engine.
+
+
+
+### 5. `core/quarantine_manager.py` (`QuarantineManager` Class)
+
+* **Purpose**: Manages threat isolation and forensic reporting.
+* **Key Functions**:
+* `quarantine_file(file_path)`: Generates a unique, timestamped filename and copies the malicious workbook into the `quarantine/` directory.
+* `triage_quarantine()`: Iterates through all files in the quarantine folder, computes their SHA-256 cryptographic hashes and file sizes, and returns a structured list of dictionaries containing file metadata and status (`Quarantined - Pending Analyst Review`) for analyst review.
+
+
+
+---
+
+## 🚀 Installation & Setup
 
 1. **Clone the Repository**:
 ```powershell
-git clone https://github.com/YOUR_USERNAME/NEW-GATEKEEPER.git
+git clone [https://github.com/YOUR_USERNAME/NEW-GATEKEEPER.git](https://github.com/YOUR_USERNAME/NEW-GATEKEEPER.git)
 cd NEW-GATEKEEPER
 
 ```
@@ -74,11 +136,11 @@ python -m pip install -r requirements.txt
 
 ---
 
-## 💻 Usage & Command-Line Interface
+## 💻 Command-Line Usage
 
 ### 1. Scan a Document
 
-Run the pipeline against an Excel workbook. If the risk score is $\ge 50$, the file is automatically quarantined; otherwise, it is safely copied to `clean_output/`.
+Run the pipeline against an Excel workbook. If the cumulative risk score is $\ge 50$, the file is automatically blocked and quarantined; otherwise, it is safely archived in `clean_output/`.
 
 ```powershell
 python gatekeeper.py sample_files\malicious_sample_1.xlsm
@@ -96,9 +158,9 @@ python gatekeeper.py --triage
 
 ---
 
-## 📊 Audit Logging (`logs/audit_log.jsonl`)
+## 📊 Compliance Audit Logging (`logs/audit_log.jsonl`)
 
-Every scan appends a structured JSON Line entry detailing the inspection timestamp, target filename, calculated risk score, final verdict (`CLEAN` or `BLOCKED`), destination path, and detailed finding breakdowns. Example entry:
+Every scan appends an immutable JSON Line record detailing the execution timestamp, target file, calculated risk score, verdict (`CLEAN` or `BLOCKED`), destination path, and findings breakdown. Example entry:
 
 ```json
 {
@@ -123,3 +185,7 @@ Using the underlying parsing capabilities of `oletools`, Gatekeeper can be exten
 * **Excel**: `.xlsm`, `.xls`, `.xlsb`, `.xltm`
 * **Word**: `.doc`, `.docm`, `.dotm`
 * **PowerPoint**: `.ppt`, `.pptm`, `.potm`
+
+```
+
+```
