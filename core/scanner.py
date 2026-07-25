@@ -1,6 +1,7 @@
 import os
 import json
 from oletools.olevba import VBA_Parser
+from core.deobfuscator import MacroDeobfuscator
 
 try:
     from XLMMacroDeobfuscator.deobfuscator import process_file
@@ -81,8 +82,23 @@ class DocumentScanner:
         finally:
             vba_parser.close()
 
-        
-        # 2. Excel 4.0 / XLM Macro Scanning
+        # 2. String Deobfuscation & Normalization Feedback Loop
+        # Run deobfuscator immediately after code extraction so findings feed into rules & heuristics
+        if extracted_code_corpus:
+            deobfuscator = MacroDeobfuscator(extracted_code_corpus)
+            deobfuscated_output = deobfuscator.clean_strings()
+            
+            # If the deobfuscator extracted decoded strings / payloads, append them to the corpus
+            if deobfuscated_output:
+                extracted_code_corpus += "\n" + str(deobfuscated_output)
+                self.findings.append({
+                    "rule": "Deobfuscation_Payload_Extracted",
+                    "weight": 20,
+                    "desc": "Successfully reconstructed obfuscated or encoded string payloads."
+                })
+                self.risk_score += 20
+
+        # 3. Excel 4.0 / XLM Macro Scanning
         if XLM_AVAILABLE:
             try:
                 xlm_results = process_file(file=self.file_path, noninteractive=True)
@@ -93,11 +109,10 @@ class DocumentScanner:
                         "desc": "Legacy Excel 4.0 (XLM) macro sheets or formulas detected."
                     })
                     self.risk_score += 30
-            except Exception as e:
-                # Safely handle external library parsing anomalies without crashing the pipeline
+            except Exception:
                 pass
 
-        # 3. Custom Rule Pattern Matching
+        # 4. Custom Rule Pattern Matching (Evaluates normalized/deobfuscated corpus)
         for rule in self.custom_rules:
             rule_name = rule.get("name")
             weight = rule.get("weight", 30)
@@ -118,7 +133,7 @@ class DocumentScanner:
                 })
                 self.risk_score += weight
 
-        # 4. Keyword Co-occurrence Heuristic (Honest Labeling)
+        # 5. Keyword Co-occurrence Heuristic (Evaluates normalized/deobfuscated corpus)
         if extracted_code_corpus:
             behavioral_triggers = ["shell", "createobject", "wscript.shell", "environ", "exec", "powershell"]
             triggered_behaviors = [trig for trig in behavioral_triggers if trig in extracted_code_corpus.lower()]
