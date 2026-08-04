@@ -7,7 +7,7 @@ def main():
     """
     Entry point for the Gatekeeper CLI.
 
-    Parses command-line arguments and dispatches to one of four modes:
+    Parses command-line arguments and dispatches to one of two modes:
 
         File scan (default):
             python gatekeeper.py <file>
@@ -18,17 +18,7 @@ def main():
         Triage (--triage):
             python gatekeeper.py --triage
             Lists all quarantined files with SHA-256 hashes, risk scores,
-            findings counts, and current analyst decision status.
-
-        Confirm threat (--confirm):
-            python gatekeeper.py --confirm <filename> --analyst <name> [--notes <text>]
-            Marks a quarantined file as a confirmed threat. Requires --analyst.
-            Decision is recorded in logs/analyst_decisions.jsonl.
-
-        Release false positive (--release):
-            python gatekeeper.py --release <filename> --analyst <name> [--reason <text>]
-            Moves an analyst-verified safe file from quarantine to clean_output/.
-            Requires --analyst. Decision is recorded in logs/analyst_decisions.jsonl.
+            findings counts, and scan timestamps from the audit log.
     """
     parser = argparse.ArgumentParser(
         description="Gatekeeper Office Document Security Scanner",
@@ -43,35 +33,7 @@ def main():
     parser.add_argument(
         "--triage",
         action="store_true",
-        help="List all quarantined files with hashes, scores, and analyst status"
-    )
-    parser.add_argument(
-        "--confirm",
-        metavar="FILENAME",
-        help="Mark a quarantined file as a confirmed threat (basename only)"
-    )
-    parser.add_argument(
-        "--release",
-        metavar="FILENAME",
-        help="Release a false-positive file from quarantine back to clean_output/"
-    )
-    parser.add_argument(
-        "--analyst",
-        metavar="NAME",
-        default="",
-        help="Analyst name or ID (required with --confirm and --release)"
-    )
-    parser.add_argument(
-        "--notes",
-        metavar="TEXT",
-        default="",
-        help="Notes for --confirm (malware family, IOC details, etc.)"
-    )
-    parser.add_argument(
-        "--reason",
-        metavar="TEXT",
-        default="",
-        help="Justification for --release decision"
+        help="List all quarantined files with hashes, scores, and scan details"
     )
 
     args = parser.parse_args()
@@ -98,62 +60,7 @@ def main():
             print(f"    Findings     : {report['findings_count']}")
             print(f"    Scanned At   : {report['scanned_at']}")
             print(f"    Status       : {report['status']}")
-            if report['analyst']:
-                print(f"    Analyst      : {report['analyst']}")
-            if report['decided_at']:
-                print(f"    Decided At   : {report['decided_at']}")
         print(f"    {'─' * 60}")
-        return
-
-    # ------------------------------------------------------------------
-    # Mode: --confirm
-    # ------------------------------------------------------------------
-    if args.confirm:
-        if not args.analyst:
-            print("[!] --analyst NAME is required with --confirm.")
-            return
-
-        print(f"[*] Confirming threat: {args.confirm}")
-        result = manager.confirm_threat(
-            filename=args.confirm,
-            analyst=args.analyst,
-            notes=args.notes
-        )
-
-        if result["success"]:
-            print(f"[+] Threat confirmed.")
-            print(f"    - File    : {result['filename']}")
-            print(f"    - Analyst : {result['analyst']}")
-            print(f"    - Notes   : {result['notes'] or '(none)'}")
-            print(f"    - Logged  : logs/analyst_decisions.jsonl")
-        else:
-            print(f"[!] Error: {result['error']}")
-        return
-
-    # ------------------------------------------------------------------
-    # Mode: --release
-    # ------------------------------------------------------------------
-    if args.release:
-        if not args.analyst:
-            print("[!] --analyst NAME is required with --release.")
-            return
-
-        print(f"[*] Releasing file from quarantine: {args.release}")
-        result = manager.release_file(
-            filename=args.release,
-            analyst=args.analyst,
-            reason=args.reason
-        )
-
-        if result["success"]:
-            print(f"[+] File released to clean_output/.")
-            print(f"    - File        : {result['filename']}")
-            print(f"    - Destination : {result['destination']}")
-            print(f"    - Analyst     : {result['analyst']}")
-            print(f"    - Reason      : {result['reason'] or '(none)'}")
-            print(f"    - Logged      : logs/analyst_decisions.jsonl")
-        else:
-            print(f"[!] Error: {result['error']}")
         return
 
     # ------------------------------------------------------------------
