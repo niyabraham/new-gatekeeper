@@ -1,2 +1,3 @@
 oletools
 XLMMacroDeobfuscator
+yara-python
