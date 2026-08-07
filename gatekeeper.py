@@ -1,19 +1,23 @@
+import os
 import argparse
 from core.pipeline import GatekeeperPipeline
 from core.quarantine_manager import QuarantineManager
+from core.file_router import FORMAT_ROUTER
 
 
 def main():
     """
     Entry point for the Gatekeeper CLI.
 
-    Parses command-line arguments and dispatches to one of two modes:
+    Dispatches to one of two modes:
 
         File scan (default):
             python gatekeeper.py <file>
-            Runs the full pipeline against the given workbook. Files scoring
-            >= RISK_THRESHOLD are BLOCKED and quarantined. Files below
-            threshold are CLEAN and forwarded to clean_output/ with macros intact.
+            Supported formats: .xlsm .xls .xlsb .xltm .doc .docm .dotm
+                               .pdf .jpg .jpeg .png .docx .xlsx .msg .md
+            Each format has its own risk threshold and scanner.
+            Files scoring >= threshold are BLOCKED and quarantined.
+            Files below threshold are CLEAN and forwarded to clean_output/.
 
         Triage (--triage):
             python gatekeeper.py --triage
@@ -21,10 +25,9 @@ def main():
             findings counts, and scan timestamps from the audit log.
     """
     parser = argparse.ArgumentParser(
-        description="Gatekeeper Office Document Security Scanner",
+        description="Gatekeeper Multi-Format Document Security Scanner",
         formatter_class=argparse.RawTextHelpFormatter
     )
-
     parser.add_argument(
         "file",
         nargs="?",
@@ -36,7 +39,7 @@ def main():
         help="List all quarantined files with hashes, scores, and scan details"
     )
 
-    args = parser.parse_args()
+    args    = parser.parse_args()
     manager = QuarantineManager()
 
     # ------------------------------------------------------------------
@@ -70,15 +73,34 @@ def main():
         parser.print_help()
         return
 
-    print(f"[*] Initializing Gatekeeper Pipeline for: {args.file}")
-    pipeline = GatekeeperPipeline(args.file)
-    result = pipeline.execute()
+    # Validate file exists
+    if not os.path.exists(args.file):
+        print(f"[!] File not found: {args.file}")
+        return
 
-    print(f"[+] Scan Complete.")
-    print(f"    - Verdict        : {result['verdict']}")
-    print(f"    - Risk Score     : {result['risk_score']}")
-    print(f"    - Destination    : {result['destination']}")
-    print(f"    - Findings Count : {len(result['findings'])}")
+    # Validate format
+    ext = os.path.splitext(args.file)[1].lower()
+    if ext not in FORMAT_ROUTER:
+        supported = ", ".join(sorted(FORMAT_ROUTER.keys()))
+        print(f"[!] Unsupported file format: '{ext}'")
+        print(f"    Supported: {supported}")
+        return
+
+    print(f"[*] Initializing Gatekeeper Pipeline for: {args.file}")
+
+    try:
+        pipeline = GatekeeperPipeline(args.file)
+        result   = pipeline.execute()
+
+        print(f"[+] Scan Complete.")
+        print(f"    - Format         : {result['format']}")
+        print(f"    - Verdict        : {result['verdict']}")
+        print(f"    - Risk Score     : {result['risk_score']} / threshold {result['risk_threshold']}")
+        print(f"    - Destination    : {result['destination']}")
+        print(f"    - Findings Count : {len(result['findings'])}")
+
+    except (ValueError, FileNotFoundError) as e:
+        print(f"[!] {e}")
 
 
 if __name__ == "__main__":

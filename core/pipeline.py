@@ -2,7 +2,8 @@ import os
 import shutil
 import json
 from datetime import datetime
-from core.scanner import DocumentScanner
+
+from core.file_router import FileRouter
 from core.deobfuscator import MacroDeobfuscator
 from core.quarantine_manager import QuarantineManager
 
@@ -10,9 +11,8 @@ from core.quarantine_manager import QuarantineManager
 # Pipeline constants
 # ---------------------------------------------------------------------------
 
-RISK_THRESHOLD            = 50  # Cumulative score at or above this → BLOCKED
-WEIGHT_BASE64_PAYLOAD     = 40  # Weight added when a decoded base64 payload is found
-DECODED_PAYLOAD_PREVIEW_LEN = 80  # Max characters of a decoded payload shown in finding desc
+WEIGHT_BASE64_PAYLOAD       = 40  # Weight for decoded base64 payload (second-pass deobfuscation)
+DECODED_PAYLOAD_PREVIEW_LEN = 80  # Max characters of decoded payload shown in finding desc
 
 
 class GatekeeperPipeline:
@@ -20,17 +20,22 @@ class GatekeeperPipeline:
         """
         Initialises the pipeline for a single document scan.
 
-        Resolves the file path to an absolute path, initialises all component
-        classes (scanner, quarantine manager), and sets up the audit log path
-        relative to this file's location so it works regardless of the working
-        directory the CLI is invoked from.
+        Uses FileRouter to determine the correct scanner and per-format
+        risk threshold based on the file extension. Initialises the
+        quarantine manager and sets up the audit log path.
 
         Args:
-            file_path: Path to the workbook to scan (absolute or relative).
+            file_path: Path to the document to scan (absolute or relative).
+
+        Raises:
+            ValueError: If the file format is not supported.
+            FileNotFoundError: If the file does not exist.
         """
-        self.file_path = os.path.abspath(file_path)
-        self.filename = os.path.basename(file_path)
-        self.scanner = DocumentScanner(self.file_path)
+        self.file_path         = os.path.abspath(file_path)
+        self.filename          = os.path.basename(file_path)
+        self.router            = FileRouter(self.file_path)
+        self.risk_threshold    = self.router.threshold
+        self.format_label      = self.router.format_label
         self.quarantine_manager = QuarantineManager()
 
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -38,14 +43,14 @@ class GatekeeperPipeline:
         os.makedirs(logs_dir, exist_ok=True)
         self.audit_log_path = os.path.join(logs_dir, "audit_log.jsonl")
 
-    def _log_audit(self, verdict: str, risk_score: int, findings: list, destination: str):
+    def _log_audit(self, verdict: str, risk_score: int,
+                   findings: list, destination: str):
         """
         Appends a single scan record to logs/audit_log.jsonl.
 
-        Uses JSON Lines (JSONL) format — each entry is a self-contained JSON
-        object on one line. A mid-write crash corrupts at most the current
-        line; all previous entries remain valid and parseable. The log is
-        append-only and never modified after writing.
+        Uses JSON Lines format — each entry is a self-contained JSON object.
+        A mid-write crash corrupts at most the current line; all previous
+        entries remain valid. The log is append-only.
 
         Args:
             verdict:     "CLEAN" or "BLOCKED".
@@ -57,13 +62,14 @@ class GatekeeperPipeline:
             "timestamp":      datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "filename":       self.filename,
             "file_path":      self.file_path,
+            "format":         self.format_label,
             "verdict":        verdict,
             "risk_score":     risk_score,
+            "risk_threshold": self.risk_threshold,
             "destination":    destination,
             "findings_count": len(findings),
             "findings":       findings
         }
-
         try:
             with open(self.audit_log_path, "a") as f:
                 f.write(json.dumps(log_entry) + "\n")
@@ -75,79 +81,81 @@ class GatekeeperPipeline:
         Executes the complete Gatekeeper pipeline for the initialised file.
 
         Steps:
-            1. Static analysis — calls DocumentScanner.analyze() which runs
-               all six layers (VBA, deobfuscation, XLM, custom rules,
-               YARA, co-occurrence heuristic).
-            2. Second-pass deobfuscation — runs MacroDeobfuscator again on
-               the full extracted corpus to catch any base64 payloads not
-               surfaced during the scanner's internal deobfuscation pass.
-               Discovered payloads are folded back into the risk score.
-            3. Verdict and routing — files scoring >= RISK_THRESHOLD are
-               BLOCKED and copied to quarantine/. Files below threshold are
-               CLEAN and copied to clean_output/ with macros intact.
-            4. Audit logging — appends the full scan record to
-               logs/audit_log.jsonl.
+            1. Format routing — FileRouter selects the correct scanner and
+               per-format threshold based on file extension.
+            2. Static analysis — the format-specific scanner runs its full
+               analysis suite and returns findings and risk score.
+            3. Second-pass deobfuscation — runs MacroDeobfuscator on the
+               extracted code corpus to catch base64 payloads not surfaced
+               during the scanner's internal pass (meaningful for macro files).
+            4. Verdict and routing — files scoring >= per-format threshold
+               are BLOCKED and copied to quarantine/. Files below threshold
+               are CLEAN and copied to clean_output/ intact.
+            5. Audit logging — appends the full scan record including format
+               label and threshold to logs/audit_log.jsonl.
 
         Returns:
-            dict with keys:
-                risk_score (int)   — final cumulative score
-                verdict (str)      — "CLEAN" or "BLOCKED"
-                destination (str)  — path the file was routed to
-                findings (list)    — all findings from all layers
+            dict with keys: risk_score, risk_threshold, verdict,
+                            format, destination, findings
         """
-        # Step 1: Static analysis across all six layers
-        scan_results = self.scanner.analyze()
-        risk_score = scan_results["risk_score"]
-        findings = scan_results["findings"]
+        # Steps 1 & 2: Route and scan
+        scanner        = self.router.get_scanner()
+        scan_results   = scanner.analyze()
+        risk_score     = scan_results["risk_score"]
+        findings       = scan_results["findings"]
         extracted_code = scan_results.get("extracted_code", "")
 
-        # Step 2: Second-pass deobfuscation on the full corpus
-        deobfuscator = MacroDeobfuscator([extracted_code] if extracted_code else [])
-        deobfuscated_results = deobfuscator.clean_strings()
+        # Step 3: Second-pass deobfuscation
+        if extracted_code:
+            deobfuscator = MacroDeobfuscator(
+                [extracted_code] if isinstance(extracted_code, str)
+                else extracted_code
+            )
+            for res in deobfuscator.clean_strings():
+                for b64 in res.get("base64_artifacts", []):
+                    decoded = b64.get("decoded", "")
+                    if decoded:
+                        entry = {
+                            "rule":   "Deobfuscated_Base64_Payload",
+                            "weight": WEIGHT_BASE64_PAYLOAD,
+                            "desc":   (
+                                f"Decoded base64 payload reveals hidden string: "
+                                f"{decoded[:DECODED_PAYLOAD_PREVIEW_LEN]}"
+                            )
+                        }
+                        if entry not in findings:
+                            findings.append(entry)
+                            risk_score += WEIGHT_BASE64_PAYLOAD
 
-        for res in deobfuscated_results:
-            for b64 in res.get("base64_artifacts", []):
-                decoded_payload = b64.get("decoded", "")
-                if decoded_payload:
-                    finding_entry = {
-                        "rule": "Deobfuscated_Base64_Payload",
-                        "weight": WEIGHT_BASE64_PAYLOAD,
-                        "desc": (
-                            f"Decoded base64 payload reveals hidden string: "
-                            f"{decoded_payload[:DECODED_PAYLOAD_PREVIEW_LEN]}"
-                        )
-                    }
-                    if finding_entry not in findings:
-                        findings.append(finding_entry)
-                        risk_score += WEIGHT_BASE64_PAYLOAD
-
-        # Step 3: Verdict and routing
-        if risk_score >= RISK_THRESHOLD:
-            verdict = "BLOCKED"
+        # Step 4: Verdict and routing
+        if risk_score >= self.risk_threshold:
+            verdict     = "BLOCKED"
             destination = self.quarantine_manager.quarantine_file(self.file_path)
         else:
             verdict = "CLEAN"
             os.makedirs("clean_output", exist_ok=True)
-            base_name, ext = os.path.splitext(self.filename)
-            timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-            target_filename = f"{base_name}_{timestamp}{ext}"
-            destination = os.path.join("clean_output", target_filename)
+            base_name, ext  = os.path.splitext(self.filename)
+            timestamp       = datetime.now().strftime("%Y%m%d%H%M%S")
+            destination     = os.path.join(
+                "clean_output", f"{base_name}_{timestamp}{ext}"
+            )
             shutil.copy(self.file_path, destination)
 
-        # Step 4: Audit log
+        # Step 5: Audit log
         self._log_audit(verdict, risk_score, findings, destination)
 
         return {
-            "risk_score":  risk_score,
-            "verdict":     verdict,
-            "destination": destination,
-            "findings":    findings
+            "risk_score":     risk_score,
+            "risk_threshold": self.risk_threshold,
+            "verdict":        verdict,
+            "format":         self.format_label,
+            "destination":    destination,
+            "findings":       findings
         }
 
     def execute(self) -> dict:
         """
-        Public alias for run(). Allows external callers to use a consistent
-        verb without depending on the internal method name.
+        Public alias for run().
 
         Returns:
             The same dict returned by run().

@@ -1,3 +1,8 @@
 oletools
 XLMMacroDeobfuscator
 yara-python
+pypdf
+Pillow
+python-docx
+openpyxl
+extract-msg
